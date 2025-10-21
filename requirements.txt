@@ -1,0 +1,10 @@
+streamlit==1.26.1
+torch>=2.0.0
+diffusers[torch]>=0.21.0
+transformers>=4.30.0
+accelerate>=0.20.3
+safetensors
+pillow
+opencv-python-headless
+numpy
+einops
