@@ -4,8 +4,17 @@ from PIL import Image
 import torch
 from diffusers import StableDiffusionInstructPix2PixPipeline
 from transformers import logging as hf_logging
+import os
 
 hf_logging.set_verbosity_error()
+
+# ---------------------------
+# Hugging Face token
+# ---------------------------
+# Add your Hugging Face token in Streamlit Cloud Secrets:
+# HUGGINGFACEHUB_API_TOKEN=your_token_here
+if "HUGGINGFACEHUB_API_TOKEN" in st.secrets:
+    os.environ["HUGGINGFACEHUB_API_TOKEN"] = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
 
 # ---------------------------
 # CPU device
@@ -13,10 +22,10 @@ hf_logging.set_verbosity_error()
 device = torch.device("cpu")
 
 # ---------------------------
-# Load lightweight public Pix2Pix pipeline
+# Load Pix2Pix pipeline (public model)
 # ---------------------------
 @st.cache_resource(show_spinner=False)
-def load_pipeline(model_id="hustvl/pix2pix-edges2cats"):
+def load_pipeline(model_id="hkunlp/instruct-pix2pix-small"):
     with st.spinner("Loading Pix2Pix model (CPU, may take ~1-2 min)..."):
         pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(
             model_id,
@@ -36,8 +45,8 @@ except Exception as e:
 # ---------------------------
 # Streamlit UI
 # ---------------------------
-st.title("🎨 CPU Pix2Pix Sketch-to-Image")
-st.write("Upload a sketch and generate a photorealistic image using a CPU-friendly Pix2Pix model.")
+st.title("🎨 CPU Pix2Pix Sketch-to-Image (Online)")
+st.write("Upload a sketch and generate a photorealistic image using Pix2Pix on CPU.")
 
 # Sketch upload
 uploaded = st.file_uploader("Upload sketch (PNG/JPG)", type=["png","jpg","jpeg"])
@@ -49,7 +58,7 @@ else:
     st.info("Please upload a sketch to continue.")
 
 # Prompt and generation parameters
-prompt = st.text_area("Prompt", value="A realistic cat with detailed fur")
+prompt = st.text_area("Prompt", value="A realistic painting of a mountain landscape")
 negative_prompt = st.text_area("Negative prompt", value="blurry, low quality", height=60)
 num_steps = st.slider("Steps", 10, 25, 20)  # reduced for CPU
 guidance = st.slider("Guidance scale", 1.0, 20.0, 7.5)
