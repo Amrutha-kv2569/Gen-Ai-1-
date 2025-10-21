@@ -8,15 +8,15 @@ from transformers import logging as hf_logging
 hf_logging.set_verbosity_error()
 
 # ---------------------------
-# Device
+# CPU device
 # ---------------------------
-device = torch.device("cpu")  # CPU-only setup
+device = torch.device("cpu")
 
 # ---------------------------
-# Load lightweight Pix2Pix pipeline
+# Load lightweight public Pix2Pix pipeline
 # ---------------------------
 @st.cache_resource(show_spinner=False)
-def load_pipeline(model_id="hkunlp/instruct-pix2pix-small"):
+def load_pipeline(model_id="hustvl/pix2pix-edges2cats"):
     with st.spinner("Loading Pix2Pix model (CPU, may take ~1-2 min)..."):
         pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(
             model_id,
@@ -27,13 +27,17 @@ def load_pipeline(model_id="hkunlp/instruct-pix2pix-small"):
         pipe.enable_attention_slicing()  # reduces memory usage on CPU
     return pipe
 
-pipe = load_pipeline()
+try:
+    pipe = load_pipeline()
+except Exception as e:
+    st.error(f"Failed to load model: {e}")
+    st.stop()
 
 # ---------------------------
 # Streamlit UI
 # ---------------------------
 st.title("🎨 CPU Pix2Pix Sketch-to-Image")
-st.write("Upload a sketch and generate a photorealistic image using a lightweight Pix2Pix model.")
+st.write("Upload a sketch and generate a photorealistic image using a CPU-friendly Pix2Pix model.")
 
 # Sketch upload
 uploaded = st.file_uploader("Upload sketch (PNG/JPG)", type=["png","jpg","jpeg"])
@@ -45,9 +49,9 @@ else:
     st.info("Please upload a sketch to continue.")
 
 # Prompt and generation parameters
-prompt = st.text_area("Prompt", value="A realistic painting of a mountain landscape")
+prompt = st.text_area("Prompt", value="A realistic cat with detailed fur")
 negative_prompt = st.text_area("Negative prompt", value="blurry, low quality", height=60)
-num_steps = st.slider("Steps", 10, 30, 20)  # reduced for CPU
+num_steps = st.slider("Steps", 10, 25, 20)  # reduced for CPU
 guidance = st.slider("Guidance scale", 1.0, 20.0, 7.5)
 seed_val = st.number_input("Seed (0 = random)", min_value=0, value=0, step=1)
 
