@@ -44,8 +44,10 @@ device = torch.device("cpu")
 model = TinyGenerator().to(device)
 
 if os.path.exists("tiny_pix2pix.pth"):
-    model.load_state_dict(torch.load("tiny_pix2pix.pth", map_location=device))
-    model.eval()
+   # If saved with torch.save(model), then load with:
+  model = torch.load("tiny_pix2pix.pth", map_location=device)
+  model.eval()
+
 else:
     st.warning("tiny_pix2pix.pth not found! Upload the trained model to the repo.")
 
