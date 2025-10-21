@@ -1,7 +1,7 @@
 streamlit
 torch
+diffusers[torch]
 transformers
-diffusers
 accelerate
 safetensors
 Pillow
