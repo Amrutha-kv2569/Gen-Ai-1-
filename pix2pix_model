@@ -1,0 +1,7 @@
+import torch
+import os
+
+os.makedirs("pix2pix_model", exist_ok=True)  # make sure folder exists
+
+# Suppose 'generator' is your trained model
+torch.save(generator.state_dict(), "pix2pix_model/generator.pth")

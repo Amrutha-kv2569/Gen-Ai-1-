@@ -1,1 +1,0 @@
-torch.save(generator.state_dict(), "pix2pix_model/generator.pth")
