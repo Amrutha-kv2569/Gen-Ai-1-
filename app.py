@@ -3,7 +3,6 @@ import streamlit as st
 from PIL import Image
 import torch
 import torchvision.transforms as T
-from torchvision.utils import save_image
 import os
 
 # ---------------------------
@@ -12,13 +11,11 @@ import os
 device = torch.device("cpu")
 
 # ---------------------------
-# Load Pix2Pix model (Generator only)
+# Define the generator (must match your trained model)
 # ---------------------------
 class SimplePix2PixGenerator(torch.nn.Module):
-    # Minimal generator for demo (must match your trained model)
     def __init__(self):
         super().__init__()
-        # Example: small UNet-like structure
         self.conv = torch.nn.Sequential(
             torch.nn.Conv2d(3, 64, 3, padding=1),
             torch.nn.ReLU(),
@@ -29,8 +26,14 @@ class SimplePix2PixGenerator(torch.nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+# ---------------------------
+# Load generator from local file
+# ---------------------------
 @st.cache_resource(show_spinner=False)
 def load_generator(model_path="./pix2pix_model/generator.pth"):
+    if not os.path.exists(model_path):
+        st.error(f"Model file not found at {model_path}. Please upload generator.pth in pix2pix_model/")
+        st.stop()
     gen = SimplePix2PixGenerator().to(device)
     gen.load_state_dict(torch.load(model_path, map_location=device))
     gen.eval()
@@ -57,18 +60,22 @@ else:
 # ---------------------------
 if st.button("Generate Image") and sketch:
     try:
+        # Transform sketch to tensor
         transform = T.Compose([
             T.Resize((256, 256)),
             T.ToTensor()
         ])
         input_tensor = transform(sketch).unsqueeze(0).to(device)
 
+        # Generate output image
         with torch.no_grad():
             output_tensor = generator(input_tensor)
             output_tensor = (output_tensor + 1) / 2  # scale to [0,1]
 
-        # Convert to PIL Image
+        # Convert tensor to PIL image
         output_image = T.ToPILImage()(output_tensor.squeeze(0).cpu())
+
+        # Display generated image
         st.success("✅ Generation complete!")
         st.image(output_image, caption="Generated Image", use_column_width=True)
 
@@ -80,4 +87,3 @@ if st.button("Generate Image") and sketch:
 
     except Exception as e:
         st.error(f"Failed to generate image: {e}")
-
