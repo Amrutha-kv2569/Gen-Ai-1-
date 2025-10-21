@@ -1,4 +1,6 @@
 import io
+import os
+import zipfile
 import streamlit as st
 from PIL import Image
 import torch
@@ -6,7 +8,17 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 
 # ---------------------------
-# Simple Pix2Pix Generator (example small model)
+# Unzip dataset if not already
+# ---------------------------
+if not os.path.exists("dataset"):
+    if os.path.exists("dataset.zip"):
+        with zipfile.ZipFile("dataset.zip", "r") as zip_ref:
+            zip_ref.extractall("dataset")
+    else:
+        st.warning("dataset.zip not found! Upload it to the repo.")
+
+# ---------------------------
+# Simple Tiny Pix2Pix Generator
 # ---------------------------
 class TinyGenerator(nn.Module):
     def __init__(self):
@@ -30,15 +42,28 @@ class TinyGenerator(nn.Module):
 # ---------------------------
 device = torch.device("cpu")
 model = TinyGenerator().to(device)
-model.load_state_dict(torch.load("tiny_pix2pix.pth", map_location=device))
-model.eval()
+
+if os.path.exists("tiny_pix2pix.pth"):
+    model.load_state_dict(torch.load("tiny_pix2pix.pth", map_location=device))
+    model.eval()
+else:
+    st.warning("tiny_pix2pix.pth not found! Upload the trained model to the repo.")
 
 # ---------------------------
 # Streamlit UI
 # ---------------------------
 st.title("🎨 Sketch-to-Image (Tiny Pix2Pix CPU)")
-st.write("Upload a sketch and generate a photorealistic image using a tiny Pix2Pix model on CPU.")
+st.write("Upload a sketch and generate a photorealistic image using Tiny Pix2Pix on CPU.")
 
+# Show example dataset sketches
+if os.path.exists("dataset"):
+    st.subheader("Example sketches from dataset")
+    sketch_files = [f for f in os.listdir("dataset") if "sketch" in f.lower()]
+    for f in sketch_files:
+        img = Image.open(os.path.join("dataset", f)).convert("RGB")
+        st.image(img, caption=f, width=150)
+
+# Upload sketch
 uploaded = st.file_uploader("Upload sketch (PNG/JPG)", type=["png","jpg","jpeg"])
 if uploaded:
     sketch = Image.open(uploaded).convert("RGB")
@@ -47,32 +72,35 @@ else:
     sketch = None
     st.info("Please upload a sketch to continue.")
 
-# ---------------------------
-# Transform sketch for model
-# ---------------------------
+# Transform for model
 transform = transforms.Compose([
-    transforms.Resize((128,128)),  # small size for CPU
+    transforms.Resize((128,128)),
     transforms.ToTensor(),
     transforms.Normalize([0.5]*3, [0.5]*3)
 ])
 
+# Generate image
 if sketch and st.button("Generate Image"):
-    try:
-        input_tensor = transform(sketch).unsqueeze(0).to(device)  # add batch dim
-        with torch.no_grad():
-            output = model(input_tensor).squeeze(0).cpu()
-        
-        # Convert back to PIL
-        output_image = output * 0.5 + 0.5  # unnormalize
-        output_image = transforms.ToPILImage()(output_image.clamp(0,1))
-        st.success("✅ Generation complete!")
-        st.image(output_image, caption="Generated Image", use_column_width=True)
+    if not os.path.exists("tiny_pix2pix.pth"):
+        st.error("Cannot generate: tiny_pix2pix.pth model file is missing.")
+    else:
+        try:
+            input_tensor = transform(sketch).unsqueeze(0).to(device)
+            with torch.no_grad():
+                output = model(input_tensor).squeeze(0).cpu()
+            
+            # Convert back to PIL
+            output_image = output * 0.5 + 0.5  # unnormalize
+            output_image = transforms.ToPILImage()(output_image.clamp(0,1))
 
-        # Download button
-        buf = io.BytesIO()
-        output_image.save(buf, format="PNG")
-        buf.seek(0)
-        st.download_button("Download Image", data=buf, file_name="pix2pix_result.png", mime="image/png")
+            st.success("✅ Generation complete!")
+            st.image(output_image, caption="Generated Image", use_column_width=True)
 
-    except Exception as e:
-        st.error(f"Failed to generate image: {e}")
+            # Download button
+            buf = io.BytesIO()
+            output_image.save(buf, format="PNG")
+            buf.seek(0)
+            st.download_button("Download Image", data=buf, file_name="pix2pix_result.png", mime="image/png")
+
+        except Exception as e:
+            st.error(f"Failed to generate image: {e}")
