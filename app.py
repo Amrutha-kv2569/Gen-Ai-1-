@@ -78,4 +78,4 @@ if st.button("Generate Image") and sketch:
         buf.seek(0)
         st.download_button("Download Image", data=buf, file_name="generated.png", mime="image/png")
 
-    e
+    
