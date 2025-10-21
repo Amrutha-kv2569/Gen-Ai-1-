@@ -5,4 +5,4 @@ diffusers
 accelerate
 safetensors
 Pillow
-
+opencv-python-headless
