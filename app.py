@@ -37,10 +37,10 @@ st.write("Select a sketch from the dataset or upload your own.")
 # GitHub dataset
 # ---------------------------
 # Replace this URL with your GitHub raw folder containing sketches
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/dataset/sketches/"
+GITHUB_RAW_URL = "https://github.com/Amrutha-kv2569/Gen-Ai-1-/blob/main/dataset.zip"
 
 # Example images: list of filenames in your repo
-image_files = ["image_001.png", "image_002.png", "image_003.png"]
+image_files = ["n02691156_58", "n02691156_196", "n02691156_394"]
 
 selected_image_name = st.selectbox("Select a sketch from dataset", ["--Upload manually--"] + image_files)
 
