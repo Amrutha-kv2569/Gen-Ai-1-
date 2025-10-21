@@ -1,72 +1,50 @@
 import io
-import os
-import zipfile
 import streamlit as st
 from PIL import Image
 import torch
-import torch.nn as nn
-import torchvision.transforms as transforms
+import torchvision.transforms as T
+from torchvision.utils import save_image
+import os
 
 # ---------------------------
-# Unzip dataset if not already
+# Device (CPU-only)
 # ---------------------------
-if not os.path.exists("dataset"):
-    if os.path.exists("dataset.zip"):
-        with zipfile.ZipFile("dataset.zip", "r") as zip_ref:
-            zip_ref.extractall("dataset")
-    else:
-        st.warning("dataset.zip not found! Upload it to the repo.")
+device = torch.device("cpu")
 
 # ---------------------------
-# Simple Tiny Pix2Pix Generator
+# Load Pix2Pix model (Generator only)
 # ---------------------------
-class TinyGenerator(nn.Module):
+class SimplePix2PixGenerator(torch.nn.Module):
+    # Minimal generator for demo (must match your trained model)
     def __init__(self):
-        super(TinyGenerator, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(3, 64, 4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, 4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1),
-            nn.Tanh()
+        super().__init__()
+        # Example: small UNet-like structure
+        self.conv = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 64, 3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(64, 3, 3, padding=1),
+            torch.nn.Tanh()
         )
 
     def forward(self, x):
         return self.conv(x)
 
-# ---------------------------
-# Load trained model
-# ---------------------------
-device = torch.device("cpu")
-model = TinyGenerator().to(device)
+@st.cache_resource(show_spinner=False)
+def load_generator(model_path="./pix2pix_model/generator.pth"):
+    gen = SimplePix2PixGenerator().to(device)
+    gen.load_state_dict(torch.load(model_path, map_location=device))
+    gen.eval()
+    return gen
 
-if os.path.exists("tiny_pix2pix.pth"):
-   # If saved with torch.save(model), then load with:
-  model = torch.load("tiny_pix2pix.pth", map_location=device)
-  model.eval()
-
-else:
-    st.warning("tiny_pix2pix.pth not found! Upload the trained model to the repo.")
+generator = load_generator()
 
 # ---------------------------
 # Streamlit UI
 # ---------------------------
-st.title("🎨 Sketch-to-Image (Tiny Pix2Pix CPU)")
-st.write("Upload a sketch and generate a photorealistic image using Tiny Pix2Pix on CPU.")
+st.title("🎨 Sketch-to-Image Demo (CPU Pix2Pix)")
+st.write("Upload a sketch (PNG/JPG) and generate a realistic image.")
 
-# Show example dataset sketches
-if os.path.exists("dataset"):
-    st.subheader("Example sketches from dataset")
-    sketch_files = [f for f in os.listdir("dataset") if "sketch" in f.lower()]
-    for f in sketch_files:
-        img = Image.open(os.path.join("dataset", f)).convert("RGB")
-        st.image(img, caption=f, width=150)
-
-# Upload sketch
-uploaded = st.file_uploader("Upload sketch (PNG/JPG)", type=["png","jpg","jpeg"])
+uploaded = st.file_uploader("Upload sketch", type=["png", "jpg", "jpeg"])
 if uploaded:
     sketch = Image.open(uploaded).convert("RGB")
     st.image(sketch, caption="Input Sketch", use_column_width=True)
@@ -74,35 +52,30 @@ else:
     sketch = None
     st.info("Please upload a sketch to continue.")
 
-# Transform for model
-transform = transforms.Compose([
-    transforms.Resize((128,128)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5]*3, [0.5]*3)
-])
+# ---------------------------
+# Generate image button
+# ---------------------------
+if st.button("Generate Image") and sketch:
+    try:
+        transform = T.Compose([
+            T.Resize((256, 256)),
+            T.ToTensor()
+        ])
+        input_tensor = transform(sketch).unsqueeze(0).to(device)
 
-# Generate image
-if sketch and st.button("Generate Image"):
-    if not os.path.exists("tiny_pix2pix.pth"):
-        st.error("Cannot generate: tiny_pix2pix.pth model file is missing.")
-    else:
-        try:
-            input_tensor = transform(sketch).unsqueeze(0).to(device)
-            with torch.no_grad():
-                output = model(input_tensor).squeeze(0).cpu()
-            
-            # Convert back to PIL
-            output_image = output * 0.5 + 0.5  # unnormalize
-            output_image = transforms.ToPILImage()(output_image.clamp(0,1))
+        with torch.no_grad():
+            output_tensor = generator(input_tensor)
+            output_tensor = (output_tensor + 1) / 2  # scale to [0,1]
 
-            st.success("✅ Generation complete!")
-            st.image(output_image, caption="Generated Image", use_column_width=True)
+        # Convert to PIL Image
+        output_image = T.ToPILImage()(output_tensor.squeeze(0).cpu())
+        st.success("✅ Generation complete!")
+        st.image(output_image, caption="Generated Image", use_column_width=True)
 
-            # Download button
-            buf = io.BytesIO()
-            output_image.save(buf, format="PNG")
-            buf.seek(0)
-            st.download_button("Download Image", data=buf, file_name="pix2pix_result.png", mime="image/png")
+        # Download button
+        buf = io.BytesIO()
+        output_image.save(buf, format="PNG")
+        buf.seek(0)
+        st.download_button("Download Image", data=buf, file_name="generated.png", mime="image/png")
 
-        except Exception as e:
-            st.error(f"Failed to generate image: {e}")
+    e
