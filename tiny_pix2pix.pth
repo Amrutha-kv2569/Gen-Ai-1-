@@ -1,1 +1,2 @@
+# Only save the state_dict (recommended)
 torch.save(model.state_dict(), "tiny_pix2pix.pth")
