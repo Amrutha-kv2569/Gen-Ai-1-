@@ -1,53 +1,58 @@
-import streamlit as st
-from PIL import Image
+import os
+import zipfile
 import torch
-from torchvision import transforms
-import io
-from train_pix2pix import SimplePix2Pix  # import model class
+import torch.nn as nn
+from PIL import Image
+import torchvision.transforms as transforms
+import streamlit as st
+from train_pix2pix import SimplePix2Pix
 
-# ---------------------------
-# Load trained model
-# ---------------------------
-device = torch.device("cpu")
-model = SimplePix2Pix().to(device)
-model.load_state_dict(torch.load("pix2pix_model.pth", map_location=device))
-model.eval()
+# --- Step 1: Unzip dataset if not already ---
+if not os.path.exists("dataset"):
+    if os.path.exists("dataset.zip"):
+        with zipfile.ZipFile("dataset.zip", "r") as zip_ref:
+            zip_ref.extractall(".")
+        st.info("✅ Dataset extracted successfully.")
+    else:
+        st.error("❌ 'dataset.zip' not found! Please upload it to the project folder.")
+        st.stop()
 
-# ---------------------------
-# Transform
-# ---------------------------
-transform = transforms.Compose([
-    transforms.Resize((128,128)),
-    transforms.ToTensor()
-])
+# --- Step 2: Define model loading function ---
+@st.cache_resource
+def load_model():
+    model = SimplePix2Pix()
+    if os.path.exists("pix2pix_model.pth"):
+        model.load_state_dict(torch.load("pix2pix_model.pth", map_location=torch.device("cpu")))
+        st.success("Model loaded successfully!")
+    else:
+        st.warning("⚠️ No pre-trained model found. Using untrained model for demo.")
+    model.eval()
+    return model
 
-# ---------------------------
-# Streamlit UI
-# ---------------------------
-st.title("🎨 Sketch-to-Image (CPU Pix2Pix)")
-st.write("Upload a sketch to generate a realistic image.")
+model = load_model()
 
-uploaded = st.file_uploader("Upload sketch", type=["png","jpg","jpeg"])
-if uploaded:
-    sketch = Image.open(uploaded).convert("RGB")
-    st.image(sketch, caption="Input Sketch", use_column_width=True)
+# --- Step 3: Streamlit UI ---
+st.title("✏️ Sketch to Image Generator (CPU Demo)")
+st.write("Upload a sketch and generate a simple image using Pix2Pix model.")
 
-    # Preprocess
-    input_tensor = transform(sketch).unsqueeze(0).to(device)
+uploaded_file = st.file_uploader("Upload a sketch image", type=["jpg", "png"])
 
-    # Generate
+if uploaded_file is not None:
+    sketch = Image.open(uploaded_file).convert("RGB")
+    st.image(sketch, caption="🖼️ Uploaded Sketch", use_container_width=True)
+
+    # --- Preprocess input ---
+    transform = transforms.Compose([
+        transforms.Resize((128, 128)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+    sketch_tensor = transform(sketch).unsqueeze(0)
+
+    # --- Generate output ---
     with torch.no_grad():
-        output_tensor = model(input_tensor)
+        output = model(sketch_tensor)
+    output_image = output.squeeze().permute(1, 2, 0).detach().numpy()
+    output_image = (output_image + 1) / 2  # Denormalize to [0,1]
 
-    # Postprocess
-    output_tensor = (output_tensor.squeeze(0).clamp(0,1) * 255).byte()
-    output_img = transforms.ToPILImage()(output_tensor.cpu())
-    st.image(output_img, caption="Generated Image", use_column_width=True)
-
-    # Download button
-    buf = io.BytesIO()
-    output_img.save(buf, format="PNG")
-    buf.seek(0)
-    st.download_button("Download Image", data=buf, file_name="generated.png", mime="image/png")
-else:
-    st.info("Please upload a sketch to continue.")
+    st.image(output_image, caption="🖼️ Generated Image", use_container_width=True)
