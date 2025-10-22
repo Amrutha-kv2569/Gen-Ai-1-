@@ -1,94 +1,104 @@
+import os
+from PIL import Image
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+import torch.optim as optim
 from torchvision import transforms
-from PIL import Image
-import os
+from torch.utils.data import Dataset, DataLoader
 
-# ---------------------------
-# Dataset
-# ---------------------------
-class SketchPhotoDataset(Dataset):
+# --- Dataset Loader ---
+class SketchDataset(Dataset):
     def __init__(self, sketch_dir, photo_dir, transform=None):
+        self.sketches = sorted(os.listdir(sketch_dir))
+        self.photos = sorted(os.listdir(photo_dir))
         self.sketch_dir = sketch_dir
         self.photo_dir = photo_dir
         self.transform = transform
-        self.files = sorted(os.listdir(sketch_dir))
 
     def __len__(self):
-        return len(self.files)
+        return len(self.sketches)
 
     def __getitem__(self, idx):
-        sketch_path = os.path.join(self.sketch_dir, self.files[idx])
-        photo_path = os.path.join(self.photo_dir, self.files[idx])
-
-        sketch = Image.open(sketch_path).convert("RGB")
-        photo = Image.open(photo_path).convert("RGB")
-
+        sketch = Image.open(os.path.join(self.sketch_dir, self.sketches[idx])).convert("RGB")
+        photo = Image.open(os.path.join(self.photo_dir, self.photos[idx])).convert("RGB")
         if self.transform:
             sketch = self.transform(sketch)
             photo = self.transform(photo)
-
         return sketch, photo
 
-# ---------------------------
-# Transform (resize for CPU)
-# ---------------------------
-transform = transforms.Compose([
-    transforms.Resize((128,128)),
-    transforms.ToTensor()
-])
-
-dataset = SketchPhotoDataset("dataset/sketches", "dataset/photos", transform=transform)
-dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-
-# ---------------------------
-# Simple Pix2Pix Generator (U-Net style)
-# ---------------------------
-class SimplePix2Pix(nn.Module):
+# --- Simple Generator (U-Net style) ---
+class Generator(nn.Module):
     def __init__(self):
-        super(SimplePix2Pix, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 32, 4, 2, 1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, 4, 2, 1),
-            nn.ReLU()
-        )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(64, 32, 4, 2, 1),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 3, 4, 2, 1),
-            nn.Tanh()
+        super().__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(3, 64, 4, 2, 1), nn.ReLU(),
+            nn.Conv2d(64, 128, 4, 2, 1), nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1), nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, 4, 2, 1), nn.Tanh()
         )
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
+        return self.main(x)
 
+# --- Simple Discriminator ---
+class Discriminator(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(6, 64, 4, 2, 1), nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 128, 4, 2, 1), nn.LeakyReLU(0.2),
+            nn.Flatten(),
+            nn.Linear(128*16*16, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, sketch, photo):
+        x = torch.cat([sketch, photo], dim=1)
+        return self.main(x)
+
+# --- Setup ---
 device = torch.device("cpu")
-model = SimplePix2Pix().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-criterion = nn.MSELoss()
+transform = transforms.Compose([
+    transforms.Resize((64, 64)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
 
-# ---------------------------
-# Training
-# ---------------------------
-epochs = 50  # small dataset, small model
+dataset = SketchDataset("dataset/sketches", "dataset/photos", transform)
+loader = DataLoader(dataset, batch_size=1, shuffle=True)
+
+G = Generator().to(device)
+D = Discriminator().to(device)
+
+criterion = nn.BCELoss()
+optimizer_G = optim.Adam(G.parameters(), lr=0.0002)
+optimizer_D = optim.Adam(D.parameters(), lr=0.0002)
+
+# --- Train (tiny demo training loop) ---
+epochs = 5
 for epoch in range(epochs):
-    for sketch, photo in dataloader:
-        sketch = sketch.to(device)
-        photo = photo.to(device)
+    for sketch, photo in loader:
+        sketch, photo = sketch.to(device), photo.to(device)
+        valid = torch.ones((1, 1), device=device)
+        fake = torch.zeros((1, 1), device=device)
 
-        output = model(sketch)
-        loss = criterion(output, photo)
+        # Train Generator
+        optimizer_G.zero_grad()
+        gen_photo = G(sketch)
+        D_gen = D(sketch, gen_photo)
+        loss_G = criterion(D_gen, valid)
+        loss_G.backward()
+        optimizer_G.step()
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        # Train Discriminator
+        optimizer_D.zero_grad()
+        D_real = D(sketch, photo)
+        D_fake = D(sketch, gen_photo.detach())
+        loss_D = (criterion(D_real, valid) + criterion(D_fake, fake)) / 2
+        loss_D.backward()
+        optimizer_D.step()
 
-    print(f"Epoch [{epoch+1}/{epochs}] Loss: {loss.item():.4f}")
+    print(f"Epoch [{epoch+1}/{epochs}]  Loss_G: {loss_G.item():.4f}  Loss_D: {loss_D.item():.4f}")
 
-# Save trained model
-torch.save(model.state_dict(), "pix2pix_model.pth")
-print("Training complete. Model saved as pix2pix_model.pth")
+torch.save(G.state_dict(), "pix2pix_generator.pth")
+print("✅ Training complete! Generator saved.")
