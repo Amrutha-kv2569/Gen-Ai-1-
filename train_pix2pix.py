@@ -4,6 +4,19 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 import os  # <-- make sure this is imported
+import zipfile
+import os
+
+# Automatically extract dataset.zip if the dataset folder doesn't exist
+if not os.path.exists("dataset"):
+    if os.path.exists("dataset.zip"):
+        print("📦 Extracting dataset.zip ...")
+        with zipfile.ZipFile("dataset.zip", 'r') as zip_ref:
+            zip_ref.extractall("dataset")
+        print("✅ Dataset extracted to /dataset")
+    else:
+        raise FileNotFoundError("❌ dataset.zip not found. Please upload it to your project root.")
+
 
 # ---------------------------
 # Check dataset folders
