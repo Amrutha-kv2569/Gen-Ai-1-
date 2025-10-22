@@ -1,11 +1,13 @@
+import os
 import streamlit as st
-import torch
-import torch.nn as nn
-from torchvision import transforms
 from PIL import Image
-import io
+import torch
+from torchvision import transforms
+import torch.nn as nn
 
-# --- Generator Model (must match training) ---
+# ---------------------------
+# Generator (same as training)
+# ---------------------------
 class Generator(nn.Module):
     def __init__(self):
         super().__init__()
@@ -19,41 +21,56 @@ class Generator(nn.Module):
     def forward(self, x):
         return self.main(x)
 
-# --- Load model ---
+# ---------------------------
+# Load model safely
+# ---------------------------
 @st.cache_resource
 def load_model():
     model = Generator()
-    model.load_state_dict(torch.load("pix2pix_generator.pth", map_location="cpu"))
     model.eval()
+    device = torch.device("cpu")
+    model.to(device)
+
+    try:
+        # Fix PyTorch 2.6+ unpickling error
+        model.load_state_dict(torch.load("pix2pix_generator.pth", map_location=device, weights_only=False))
+        st.success("✅ Model loaded successfully!")
+    except FileNotFoundError:
+        st.warning("⚠️ Model not found. Please train it using train_pix2pix.py first.")
+    except Exception as e:
+        st.error(f"❌ Failed to load model: {e}")
+
     return model
 
 G = load_model()
 
-# --- UI ---
-st.title("🖍️ Sketch to Image Generator (CPU Pix2Pix)")
-st.write("Upload a hand-drawn sketch to generate a realistic image (trained on your airplane dataset).")
+# ---------------------------
+# Streamlit UI
+# ---------------------------
+st.title("🖌 Sketch-to-Image Generation")
+st.write("Upload a hand-drawn or digital sketch and convert it into a realistic image using Pix2Pix.")
 
-uploaded = st.file_uploader("Upload a sketch", type=["jpg", "jpeg", "png"])
-if uploaded:
-    img = Image.open(uploaded).convert("RGB")
+uploaded_file = st.file_uploader("Upload your sketch image (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
-    st.image(img, caption="Input Sketch", width=256)
+if uploaded_file and G is not None:
+    # Open image
+    sketch_img = Image.open(uploaded_file).convert("RGB")
 
+    # Transform
     transform = transforms.Compose([
         transforms.Resize((64, 64)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
+    sketch_tensor = transform(sketch_img).unsqueeze(0)  # Add batch dimension
 
-    tensor_img = transform(img).unsqueeze(0)
+    # Generate
     with torch.no_grad():
-        output = G(tensor_img).squeeze(0)
-        output = (output * 0.5 + 0.5).clamp(0, 1)
-        result_img = transforms.ToPILImage()(output)
+        output_tensor = G(sketch_tensor)
+    
+    # Denormalize
+    output_tensor = (output_tensor.squeeze(0) * 0.5 + 0.5).clamp(0, 1)
+    output_img = transforms.ToPILImage()(output_tensor)
 
-    st.image(result_img, caption="Generated Image", width=256)
-
-    # Download button
-    buf = io.BytesIO()
-    result_img.save(buf, format="PNG")
-    st.download_button("Download Image", data=buf.getvalue(), file_name="generated.png", mime="image/png")
+    # Show
+    st.image([sketch_img, output_img], caption=["Input Sketch", "Generated Image"], width=300)
