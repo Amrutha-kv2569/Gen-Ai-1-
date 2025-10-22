@@ -1,58 +1,59 @@
-import os
-import zipfile
+import streamlit as st
 import torch
 import torch.nn as nn
+from torchvision import transforms
 from PIL import Image
-import torchvision.transforms as transforms
-import streamlit as st
-from train_pix2pix import SimplePix2Pix
+import io
 
-# --- Step 1: Unzip dataset if not already ---
-if not os.path.exists("dataset"):
-    if os.path.exists("dataset.zip"):
-        with zipfile.ZipFile("dataset.zip", "r") as zip_ref:
-            zip_ref.extractall(".")
-        st.info("✅ Dataset extracted successfully.")
-    else:
-        st.error("❌ 'dataset.zip' not found! Please upload it to the project folder.")
-        st.stop()
+# --- Generator Model (must match training) ---
+class Generator(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(3, 64, 4, 2, 1), nn.ReLU(),
+            nn.Conv2d(64, 128, 4, 2, 1), nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1), nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, 4, 2, 1), nn.Tanh()
+        )
 
-# --- Step 2: Define model loading function ---
+    def forward(self, x):
+        return self.main(x)
+
+# --- Load model ---
 @st.cache_resource
 def load_model():
-    model = SimplePix2Pix()
-    if os.path.exists("pix2pix_model.pth"):
-        model.load_state_dict(torch.load("pix2pix_model.pth", map_location=torch.device("cpu")))
-        st.success("Model loaded successfully!")
-    else:
-        st.warning("⚠️ No pre-trained model found. Using untrained model for demo.")
+    model = Generator()
+    model.load_state_dict(torch.load("pix2pix_generator.pth", map_location="cpu"))
     model.eval()
     return model
 
-model = load_model()
+G = load_model()
 
-# --- Step 3: Streamlit UI ---
-st.title("✏️ Sketch to Image Generator (CPU Demo)")
-st.write("Upload a sketch and generate a simple image using Pix2Pix model.")
+# --- UI ---
+st.title("🖍️ Sketch to Image Generator (CPU Pix2Pix)")
+st.write("Upload a hand-drawn sketch to generate a realistic image (trained on your airplane dataset).")
 
-uploaded_file = st.file_uploader("Upload a sketch image", type=["jpg", "png"])
+uploaded = st.file_uploader("Upload a sketch", type=["jpg", "jpeg", "png"])
+if uploaded:
+    img = Image.open(uploaded).convert("RGB")
 
-if uploaded_file is not None:
-    sketch = Image.open(uploaded_file).convert("RGB")
-    st.image(sketch, caption="🖼️ Uploaded Sketch", use_container_width=True)
+    st.image(img, caption="Input Sketch", width=256)
 
-    # --- Preprocess input ---
     transform = transforms.Compose([
-        transforms.Resize((128, 128)),
+        transforms.Resize((64, 64)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
-    sketch_tensor = transform(sketch).unsqueeze(0)
 
-    # --- Generate output ---
+    tensor_img = transform(img).unsqueeze(0)
     with torch.no_grad():
-        output = model(sketch_tensor)
-    output_image = output.squeeze().permute(1, 2, 0).detach().numpy()
-    output_image = (output_image + 1) / 2  # Denormalize to [0,1]
+        output = G(tensor_img).squeeze(0)
+        output = (output * 0.5 + 0.5).clamp(0, 1)
+        result_img = transforms.ToPILImage()(output)
 
-    st.image(output_image, caption="🖼️ Generated Image", use_container_width=True)
+    st.image(result_img, caption="Generated Image", width=256)
+
+    # Download button
+    buf = io.BytesIO()
+    result_img.save(buf, format="PNG")
+    st.download_button("Download Image", data=buf.getvalue(), file_name="generated.png", mime="image/png")
