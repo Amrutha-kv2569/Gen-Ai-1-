@@ -1,4 +1,5 @@
 import os
+import zipfile
 from PIL import Image
 import torch
 import torch.nn as nn
@@ -6,7 +7,20 @@ import torch.optim as optim
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 
-# --- Dataset Loader ---
+# ---------------------------
+# Unzip dataset if needed
+# ---------------------------
+if not os.path.exists("dataset"):
+    if os.path.exists("dataset.zip"):
+        with zipfile.ZipFile("dataset.zip", "r") as zip_ref:
+            zip_ref.extractall(".")
+        print("✅ dataset.zip extracted successfully!")
+    else:
+        raise FileNotFoundError("dataset.zip not found in repo!")
+
+# ---------------------------
+# Dataset Loader
+# ---------------------------
 class SketchDataset(Dataset):
     def __init__(self, sketch_dir, photo_dir, transform=None):
         self.sketches = sorted(os.listdir(sketch_dir))
@@ -26,7 +40,9 @@ class SketchDataset(Dataset):
             photo = self.transform(photo)
         return sketch, photo
 
-# --- Simple Generator (U-Net style) ---
+# ---------------------------
+# Generator (U-Net style)
+# ---------------------------
 class Generator(nn.Module):
     def __init__(self):
         super().__init__()
@@ -40,7 +56,9 @@ class Generator(nn.Module):
     def forward(self, x):
         return self.main(x)
 
-# --- Simple Discriminator ---
+# ---------------------------
+# Discriminator
+# ---------------------------
 class Discriminator(nn.Module):
     def __init__(self):
         super().__init__()
@@ -56,8 +74,11 @@ class Discriminator(nn.Module):
         x = torch.cat([sketch, photo], dim=1)
         return self.main(x)
 
-# --- Setup ---
+# ---------------------------
+# Setup
+# ---------------------------
 device = torch.device("cpu")
+
 transform = transforms.Compose([
     transforms.Resize((64, 64)),
     transforms.ToTensor(),
@@ -74,8 +95,10 @@ criterion = nn.BCELoss()
 optimizer_G = optim.Adam(G.parameters(), lr=0.0002)
 optimizer_D = optim.Adam(D.parameters(), lr=0.0002)
 
-# --- Train (tiny demo training loop) ---
-epochs = 5
+# ---------------------------
+# Train
+# ---------------------------
+epochs = 5  # tiny dataset, just demo
 for epoch in range(epochs):
     for sketch, photo in loader:
         sketch, photo = sketch.to(device), photo.to(device)
@@ -100,5 +123,8 @@ for epoch in range(epochs):
 
     print(f"Epoch [{epoch+1}/{epochs}]  Loss_G: {loss_G.item():.4f}  Loss_D: {loss_D.item():.4f}")
 
+# ---------------------------
+# Save Generator weights
+# ---------------------------
 torch.save(G.state_dict(), "pix2pix_generator.pth")
-print("✅ Training complete! Generator saved.")
+print("✅ Training complete! Generator saved as pix2pix_generator.pth")
