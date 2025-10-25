@@ -47,7 +47,7 @@ model = load_model()
 # ---------------------------
 # Streamlit UI
 # ---------------------------
-st.title("🖌 Sketch-to-Image (Autoencoder)")
+st.title("🖌 Sketch-to-Image")
 st.write("Upload a black-and-white sketch and generate a colored image.")
 
 uploaded_file = st.file_uploader("Upload Sketch (PNG/JPG)", type=["png", "jpg", "jpeg"])
